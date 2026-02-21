@@ -72,13 +72,21 @@ export default function App() {
       selectionIndicator: false,
       infoBox: false,
       scene3DOnly: true,
-      imageryProvider: ionToken
-        ? Cesium.createWorldImagery({
-          style: Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS,
-        })
-        : new Cesium.ArcGisMapServerImageryProvider({
+      imageryProvider: (() => {
+        if (ionToken) {
+          if (typeof Cesium.createWorldImagery === 'function') {
+            return Cesium.createWorldImagery({
+              style: Cesium.IonWorldImageryStyle?.AERIAL_WITH_LABELS,
+            });
+          }
+          if (Cesium.IonImageryProvider?.fromAssetId) {
+            return Cesium.IonImageryProvider.fromAssetId(2);
+          }
+        }
+        return new Cesium.ArcGisMapServerImageryProvider({
           url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
-        }),
+        });
+      })(),
     });
 
     // Dark globe atmosphere
