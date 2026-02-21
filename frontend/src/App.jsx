@@ -48,8 +48,13 @@ export default function App() {
       return;
     }
 
-    // Disable Ion default token warning
-    Cesium.Ion.defaultAccessToken = undefined;
+    const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
+    if (ionToken) {
+      Cesium.Ion.defaultAccessToken = ionToken;
+    } else {
+      // Avoid noisy warnings when no token is configured.
+      Cesium.Ion.defaultAccessToken = undefined;
+    }
 
     const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
       timeline: false,
@@ -63,9 +68,13 @@ export default function App() {
       selectionIndicator: false,
       infoBox: false,
       scene3DOnly: true,
-      imageryProvider: new Cesium.OpenStreetMapImageryProvider({
-        url: 'https://tile.openstreetmap.org/',
-      }),
+      imageryProvider: ionToken
+        ? Cesium.createWorldImagery({
+          style: Cesium.IonWorldImageryStyle.AERIAL_WITH_LABELS,
+        })
+        : new Cesium.ArcGisMapServerImageryProvider({
+          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+        }),
     });
 
     // Dark globe atmosphere
@@ -130,7 +139,17 @@ export default function App() {
     loadStats();
     connect();
     const unsub = subscribe((newEvents) => {
-      setEvents(prev => [...newEvents, ...prev].slice(0, 10000));
+      setEvents(prev => {
+        const seen = new Set();
+        const merged = [];
+        for (const ev of [...newEvents, ...prev]) {
+          if (!ev || !ev.id || seen.has(ev.id)) continue;
+          seen.add(ev.id);
+          merged.push(ev);
+          if (merged.length >= 10000) break;
+        }
+        return merged;
+      });
     });
     const interval = setInterval(loadEvents, 300000);
     return () => { unsub(); disconnect(); clearInterval(interval); };
@@ -148,9 +167,28 @@ export default function App() {
   const loadEvents = async () => {
     try {
       const data = await fetchEvents({ limit: 5000 });
-      setEvents(data.events || []);
-      const sources = new Set((data.events || []).map(e => e.source));
-      setActiveSources(sources);
+      const incoming = data.events || [];
+      if (incoming.length > 0) {
+        setEvents(prev => {
+          const seen = new Set();
+          const merged = [];
+          for (const ev of [...incoming, ...prev]) {
+            if (!ev || !ev.id || seen.has(ev.id)) continue;
+            seen.add(ev.id);
+            merged.push(ev);
+            if (merged.length >= 10000) break;
+          }
+          return merged;
+        });
+      }
+      const sources = new Set(incoming.map(e => e.source));
+      if (sources.size > 0) {
+        setActiveSources(prev => {
+          const next = new Set(prev);
+          for (const s of sources) next.add(s);
+          return next;
+        });
+      }
     } catch (e) { console.error('Failed to load events:', e); }
   };
 

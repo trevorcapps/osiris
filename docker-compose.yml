@@ -8,6 +8,7 @@ services:
     environment:
       - VITE_API_URL=http://localhost:8000
       - VITE_WS_URL=ws://localhost:8000/ws
+      - VITE_CESIUM_ION_TOKEN=${VITE_CESIUM_ION_TOKEN}
     restart: unless-stopped
 
   backend:
