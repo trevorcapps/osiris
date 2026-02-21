@@ -12,9 +12,8 @@
     "cesium": "^1.120.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "resium": "^1.18.0",
-    "vis-network": "^9.1.9",
-    "vis-data": "^7.1.9"
+    "vis-data": "^7.1.9",
+    "vis-network": "^9.1.9"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",

@@ -1,8 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Viewer, Entity, PointGraphics, CameraFlyTo, ImageryLayer } from 'resium';
-import * as Cesium from 'cesium';
-import { Color, Cartesian3, NearFarScalar, OpenStreetMapImageryProvider } from 'cesium';
-import { fetchEvents, searchEvents, getRelationships, getStats, searchEntities } from './services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { fetchEvents, searchEvents, getRelationships, getStats } from './services/api';
 import { connect, subscribe, disconnect } from './services/websocket';
 import LayerPanel from './components/LayerPanel';
 import EntityDetail from './components/EntityDetail';
@@ -10,33 +7,23 @@ import RelationshipGraph from './components/RelationshipGraph';
 import SearchBar from './components/SearchBar';
 import StatsBar from './components/StatsBar';
 
-// Color mapping for event types
-const TYPE_COLORS = {
-  conflict: Color.RED,
-  military: Color.DARKRED,
-  aviation: Color.CYAN,
-  maritime: Color.BLUE,
-  earthquake: Color.ORANGE,
-  weather: Color.LIGHTYELLOW,
-  wildfire: Color.ORANGERED,
-  volcano: Color.DARKRED,
-  natural_disaster: Color.DARKORANGE,
-  cyber: Color.LIME,
-  infrastructure: Color.MEDIUMPURPLE,
-  sanctions: Color.GOLD,
-  financial: Color.GREENYELLOW,
-  news: Color.WHITE,
-  humanitarian: Color.HOTPINK,
-  health: Color.MEDIUMSPRINGGREEN,
-  terrorism: Color.RED,
+const TYPE_COLORS_CSS = {
+  conflict: '#ef4444', military: '#8b0000', aviation: '#06b6d4',
+  maritime: '#3b82f6', earthquake: '#f97316', weather: '#fde68a',
+  wildfire: '#ff4500', volcano: '#8b0000', natural_disaster: '#ff8c00',
+  cyber: '#22c55e', infrastructure: '#9370db', sanctions: '#eab308',
+  financial: '#adff2f', news: '#ffffff', humanitarian: '#ff69b4',
+  health: '#00fa9a', terrorism: '#ef4444',
 };
 
-const SEVERITY_SCALE = {
-  critical: 14,
-  high: 11,
-  medium: 8,
-  low: 6,
-};
+const SEVERITY_SCALE = { critical: 14, high: 11, medium: 8, low: 6 };
+
+function cssToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return { r, g, b };
+}
 
 export default function App() {
   const [events, setEvents] = useState([]);
@@ -44,18 +31,100 @@ export default function App() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [relationships, setRelationships] = useState(null);
   const [stats, setStats] = useState(null);
-  const [activeLayers, setActiveLayers] = useState(new Set(Object.keys(TYPE_COLORS)));
+  const [activeLayers, setActiveLayers] = useState(new Set(Object.keys(TYPE_COLORS_CSS)));
   const [activeSources, setActiveSources] = useState(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
   const [showRelGraph, setShowRelGraph] = useState(false);
-  const [flyTo, setFlyTo] = useState(null);
+  const cesiumContainerRef = useRef(null);
   const viewerRef = useRef(null);
+  const entitiesRef = useRef({});
 
-  const osmProvider = useMemo(() => new OpenStreetMapImageryProvider({
-    url: 'https://tile.openstreetmap.org/',
-  }), []);
+  // Initialize Cesium viewer
+  useEffect(() => {
+    if (!cesiumContainerRef.current || viewerRef.current) return;
 
-  // Initial fetch
+    const Cesium = window.Cesium;
+    if (!Cesium) {
+      console.error('Cesium not loaded');
+      return;
+    }
+
+    // Disable Ion default token warning
+    Cesium.Ion.defaultAccessToken = undefined;
+
+    const viewer = new Cesium.Viewer(cesiumContainerRef.current, {
+      timeline: false,
+      animation: false,
+      homeButton: false,
+      geocoder: false,
+      sceneModePicker: false,
+      baseLayerPicker: false,
+      navigationHelpButton: false,
+      fullscreenButton: false,
+      selectionIndicator: false,
+      infoBox: false,
+      scene3DOnly: true,
+      imageryProvider: new Cesium.OpenStreetMapImageryProvider({
+        url: 'https://tile.openstreetmap.org/',
+      }),
+    });
+
+    // Dark globe atmosphere
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0a0e17');
+    if (viewer.scene.globe) {
+      viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#1a1a2e');
+    }
+    if (viewer.scene.skyBox) viewer.scene.skyBox.show = true;
+    if (viewer.scene.sun) viewer.scene.sun.show = false;
+    if (viewer.scene.moon) viewer.scene.moon.show = false;
+
+    // Click handler
+    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    handler.setInputAction((click) => {
+      const picked = viewer.scene.pick(click.position);
+      if (Cesium.defined(picked) && picked.id && picked.id._osirisEvent) {
+        handleEventClick(picked.id._osirisEvent);
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+    viewerRef.current = viewer;
+
+    return () => {
+      handler.destroy();
+      viewer.destroy();
+      viewerRef.current = null;
+    };
+  }, []);
+
+  // Update entities on globe when filteredEvents change
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = window.Cesium;
+    if (!viewer || !Cesium) return;
+
+    // Clear existing
+    viewer.entities.removeAll();
+
+    filteredEvents.forEach(event => {
+      if (!event.lat || !event.lon) return;
+      const colorHex = TYPE_COLORS_CSS[event.event_type] || '#ffffff';
+      const rgb = cssToRgb(colorHex);
+      const size = SEVERITY_SCALE[event.severity] || 8;
+
+      const entity = viewer.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(event.lon, event.lat),
+        point: {
+          pixelSize: size,
+          color: new Cesium.Color(rgb.r, rgb.g, rgb.b, 0.9),
+          outlineColor: Cesium.Color.BLACK,
+          outlineWidth: 1,
+          scaleByDistance: new Cesium.NearFarScalar(1e3, 1.5, 1e7, 0.5),
+        },
+      });
+      entity._osirisEvent = event;
+    });
+  }, [filteredEvents]);
+
+  // Load data
   useEffect(() => {
     loadEvents();
     loadStats();
@@ -63,11 +132,11 @@ export default function App() {
     const unsub = subscribe((newEvents) => {
       setEvents(prev => [...newEvents, ...prev].slice(0, 10000));
     });
-    const interval = setInterval(loadEvents, 300000); // refresh every 5 min
+    const interval = setInterval(loadEvents, 300000);
     return () => { unsub(); disconnect(); clearInterval(interval); };
   }, []);
 
-  // Filter events when layers change
+  // Filter
   useEffect(() => {
     const filtered = events.filter(e =>
       activeLayers.has(e.event_type) &&
@@ -80,17 +149,13 @@ export default function App() {
     try {
       const data = await fetchEvents({ limit: 5000 });
       setEvents(data.events || []);
-      // Auto-populate sources
       const sources = new Set((data.events || []).map(e => e.source));
       setActiveSources(sources);
     } catch (e) { console.error('Failed to load events:', e); }
   };
 
   const loadStats = async () => {
-    try {
-      const data = await getStats();
-      setStats(data);
-    } catch (e) { console.error('Failed to load stats:', e); }
+    try { setStats(await getStats()); } catch (e) { console.error(e); }
   };
 
   const handleEventClick = async (event) => {
@@ -102,26 +167,21 @@ export default function App() {
   };
 
   const handleSearch = async (query) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      loadEvents();
-      return;
-    }
+    if (!query.trim()) { loadEvents(); return; }
     try {
       const data = await searchEvents({ query, limit: 200 });
-      const results = (data.results || []).map(r => ({
-        ...r,
-        id: r.id,
-        lat: r.lat,
-        lon: r.lon,
-      }));
-      setFilteredEvents(results);
+      setFilteredEvents(data.results || []);
     } catch (e) { console.error('Search failed:', e); }
   };
 
   const handleFlyTo = (lat, lon) => {
-    setFlyTo({ lat, lon });
-    setTimeout(() => setFlyTo(null), 2000);
+    const Cesium = window.Cesium;
+    if (viewerRef.current && Cesium) {
+      viewerRef.current.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, 500000),
+        duration: 1.5,
+      });
+    }
   };
 
   const toggleLayer = (type) => {
@@ -139,13 +199,18 @@ export default function App() {
         position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1000,
         background: 'linear-gradient(180deg, rgba(10,14,23,0.95) 0%, rgba(10,14,23,0) 100%)',
         padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16,
+        pointerEvents: 'none',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'auto' }}>
           <span style={{ fontSize: 24 }}>🌍</span>
           <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: 2, color: '#60a5fa' }}>OSIRIS</h1>
         </div>
-        <SearchBar onSearch={handleSearch} />
-        <StatsBar stats={stats} />
+        <div style={{ pointerEvents: 'auto', flex: 1, maxWidth: 500 }}>
+          <SearchBar onSearch={handleSearch} />
+        </div>
+        <div style={{ pointerEvents: 'auto' }}>
+          <StatsBar stats={stats} />
+        </div>
       </div>
 
       {/* Layer Panel */}
@@ -158,52 +223,8 @@ export default function App() {
         }, {})}
       />
 
-      {/* Globe */}
-      <Viewer
-        ref={viewerRef}
-        full
-        timeline={false}
-        animation={false}
-        homeButton={false}
-        geocoder={false}
-        sceneModePicker={false}
-        baseLayerPicker={false}
-        navigationHelpButton={false}
-        fullscreenButton={false}
-        selectionIndicator={false}
-        infoBox={false}
-        scene3DOnly
-        imageryProvider={osmProvider}
-      >
-        {flyTo && (
-          <CameraFlyTo
-            destination={Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, 500000)}
-            duration={1.5}
-          />
-        )}
-        {filteredEvents.map(event => {
-          if (!event.lat || !event.lon) return null;
-          const color = TYPE_COLORS[event.event_type] || Color.WHITE;
-          const size = SEVERITY_SCALE[event.severity] || 8;
-          return (
-            <Entity
-              key={event.id}
-              position={Cartesian3.fromDegrees(event.lon, event.lat)}
-              name={event.title}
-              description={event.description}
-              onClick={() => handleEventClick(event)}
-            >
-              <PointGraphics
-                pixelSize={size}
-                color={color}
-                outlineColor={Color.BLACK}
-                outlineWidth={1}
-                scaleByDistance={new NearFarScalar(1e3, 1.5, 1e7, 0.5)}
-              />
-            </Entity>
-          );
-        })}
-      </Viewer>
+      {/* Cesium Globe */}
+      <div ref={cesiumContainerRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Event Detail Panel */}
       {selectedEvent && (
