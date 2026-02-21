@@ -1,4 +1,5 @@
 import httpx
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -15,6 +16,7 @@ _token_cache = {
     "refresh_token": None,
     "expires_at": 0.0,
 }
+logger = logging.getLogger(__name__)
 
 
 class ACLEDIngestor(BaseIngestor):
@@ -53,11 +55,13 @@ class ACLEDIngestor(BaseIngestor):
             )
 
         if resp.status_code != 200:
+            logger.error(f"ACLED token request failed: {resp.status_code} {resp.text[:500]}")
             return None
 
         data = resp.json()
         access_token = data.get("access_token")
         if not access_token:
+            logger.error("ACLED token response missing access_token")
             return None
 
         _token_cache["access_token"] = access_token
@@ -83,8 +87,12 @@ class ACLEDIngestor(BaseIngestor):
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code != 200:
+                logger.error(f"ACLED API request failed: {resp.status_code} {resp.text[:500]}")
                 return events
             data = resp.json()
+            if data.get("status") not in (200, "200", None):
+                logger.error(f"ACLED API returned non-200 status field: {data.get('status')} {str(data)[:500]}")
+                return events
             for item in data.get("data", []):
                 lat = float(item.get("latitude", 0)) if item.get("latitude") else None
                 lon = float(item.get("longitude", 0)) if item.get("longitude") else None

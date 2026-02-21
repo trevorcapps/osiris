@@ -1,16 +1,17 @@
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+        VITE_WS_URL: ws://localhost:8000/ws
+        VITE_CESIUM_ION_TOKEN: ${VITE_CESIUM_ION_TOKEN}
+        VITE_GOOGLE_3D_TILES_API_KEY: ${VITE_GOOGLE_3D_TILES_API_KEY}
+        VITE_ION_GOOGLE_3D_TILES_ASSET_ID: ${VITE_ION_GOOGLE_3D_TILES_ASSET_ID}
     ports:
       - "3000:80"
     depends_on:
       - backend
-    environment:
-      - VITE_API_URL=http://localhost:8000
-      - VITE_WS_URL=ws://localhost:8000/ws
-      - VITE_CESIUM_ION_TOKEN=${VITE_CESIUM_ION_TOKEN}
-      - VITE_GOOGLE_3D_TILES_API_KEY=${VITE_GOOGLE_3D_TILES_API_KEY}
-      - VITE_ION_GOOGLE_3D_TILES_ASSET_ID=${VITE_ION_GOOGLE_3D_TILES_ASSET_ID}
     restart: unless-stopped
 
   backend:
