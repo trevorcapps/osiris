@@ -151,7 +151,6 @@ export default function App() {
       {/* Layer Panel */}
       <LayerPanel
         activeLayers={activeLayers}
-        typeColors={TYPE_COLORS}
         onToggle={toggleLayer}
         eventCounts={filteredEvents.reduce((acc, e) => {
           acc[e.event_type] = (acc[e.event_type] || 0) + 1;
