@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Viewer, Entity, PointGraphics, BillboardGraphics, CameraFlyTo } from 'resium';
-import { Ion, Color, Cartesian3, NearFarScalar, createWorldTerrainAsync } from 'cesium';
+import { Viewer, Entity, PointGraphics, CameraFlyTo } from 'resium';
+import * as Cesium from 'cesium';
+import { Color, Cartesian3, NearFarScalar } from 'cesium';
 import { fetchEvents, searchEvents, getRelationships, getStats, searchEntities } from './services/api';
 import { connect, subscribe, disconnect } from './services/websocket';
 import LayerPanel from './components/LayerPanel';
@@ -169,8 +170,9 @@ export default function App() {
         selectionIndicator={false}
         infoBox={false}
         scene3DOnly
-        creditContainer={document.createElement('div')}
-        imageryProvider={false}
+        imageryProvider={new Cesium.OpenStreetMapImageryProvider({
+          url: 'https://tile.openstreetmap.org/',
+        })}
       >
         {flyTo && (
           <CameraFlyTo
