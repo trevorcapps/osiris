@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || window.location.origin;
 
 export async function fetchEvents(params = {}) {
   const qs = new URLSearchParams();

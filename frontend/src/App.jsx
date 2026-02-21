@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as Cesium from 'cesium';
 import { fetchEvents, searchEvents, getRelationships, getStats } from './services/api';
-import { connect, subscribe, disconnect } from './services/websocket';
+import { connect, subscribe, disconnect, subscribeStatus } from './services/websocket';
 import LayerPanel from './components/LayerPanel';
 import EntityDetail from './components/EntityDetail';
 import RelationshipGraph from './components/RelationshipGraph';
@@ -37,16 +38,17 @@ export default function App() {
   const cesiumContainerRef = useRef(null);
   const viewerRef = useRef(null);
   const entitiesRef = useRef({});
+  const [apiLastFetchAt, setApiLastFetchAt] = useState(null);
+  const [apiEventCount, setApiEventCount] = useState(0);
+  const [apiError, setApiError] = useState(null);
+  const [wsState, setWsState] = useState('connecting');
+  const [wsLastMessageAt, setWsLastMessageAt] = useState(null);
+  const [wsEventCount, setWsEventCount] = useState(0);
+  const [tileErrors, setTileErrors] = useState([]);
 
   // Initialize Cesium viewer
   useEffect(() => {
     if (!cesiumContainerRef.current || viewerRef.current) return;
-
-    const Cesium = window.Cesium;
-    if (!Cesium) {
-      console.error('Cesium not loaded');
-      return;
-    }
 
     const ionToken = import.meta.env.VITE_CESIUM_ION_TOKEN;
     if (ionToken) {
@@ -96,8 +98,20 @@ export default function App() {
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
     viewerRef.current = viewer;
+    const baseLayer = viewer.imageryLayers.get(0);
+    const onTileError = (error) => {
+      const message = error?.message || 'Tile load error';
+      const label = `${new Date().toLocaleTimeString()} ${message}`;
+      setTileErrors(prev => [label, ...prev].slice(0, 5));
+    };
+    if (baseLayer && baseLayer.errorEvent) {
+      baseLayer.errorEvent.addEventListener(onTileError);
+    }
 
     return () => {
+      if (baseLayer && baseLayer.errorEvent) {
+        baseLayer.errorEvent.removeEventListener(onTileError);
+      }
       handler.destroy();
       viewer.destroy();
       viewerRef.current = null;
@@ -107,8 +121,7 @@ export default function App() {
   // Update entities on globe when filteredEvents change
   useEffect(() => {
     const viewer = viewerRef.current;
-    const Cesium = window.Cesium;
-    if (!viewer || !Cesium) return;
+    if (!viewer) return;
 
     // Clear existing
     viewer.entities.removeAll();
@@ -138,6 +151,7 @@ export default function App() {
     loadEvents();
     loadStats();
     connect();
+    const unsubStatus = subscribeStatus((state) => setWsState(state));
     const unsub = subscribe((newEvents) => {
       setEvents(prev => {
         const seen = new Set();
@@ -150,9 +164,11 @@ export default function App() {
         }
         return merged;
       });
+      setWsLastMessageAt(Date.now());
+      setWsEventCount(prev => prev + (newEvents?.length || 0));
     });
     const interval = setInterval(loadEvents, 300000);
-    return () => { unsub(); disconnect(); clearInterval(interval); };
+    return () => { unsub(); unsubStatus(); disconnect(); clearInterval(interval); };
   }, []);
 
   // Filter
@@ -189,7 +205,14 @@ export default function App() {
           return next;
         });
       }
-    } catch (e) { console.error('Failed to load events:', e); }
+      setApiEventCount(incoming.length);
+      setApiLastFetchAt(Date.now());
+      setApiError(null);
+    } catch (e) {
+      console.error('Failed to load events:', e);
+      setApiError(e);
+      setApiLastFetchAt(Date.now());
+    }
   };
 
   const loadStats = async () => {
@@ -213,8 +236,7 @@ export default function App() {
   };
 
   const handleFlyTo = (lat, lon) => {
-    const Cesium = window.Cesium;
-    if (viewerRef.current && Cesium) {
+    if (viewerRef.current) {
       viewerRef.current.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(lon, lat, 500000),
         duration: 1.5,
@@ -260,6 +282,36 @@ export default function App() {
           return acc;
         }, {})}
       />
+
+      {/* Status Panel */}
+      <div style={{
+        position: 'absolute',
+        bottom: 16,
+        left: 16,
+        zIndex: 999,
+        background: 'rgba(10,14,23,0.85)',
+        border: '1px solid rgba(96,165,250,0.25)',
+        borderRadius: 8,
+        padding: '10px 12px',
+        fontSize: 12,
+        color: '#cbd5f5',
+        minWidth: 220,
+        pointerEvents: 'auto',
+      }}>
+        <div style={{ fontWeight: 600, marginBottom: 6, color: '#93c5fd' }}>Status</div>
+        <div>Rendered events: {filteredEvents.length}</div>
+        <div>API last fetch: {apiLastFetchAt ? new Date(apiLastFetchAt).toLocaleTimeString() : '—'}</div>
+        <div>API events: {apiEventCount}{apiError ? ` (error)` : ''}</div>
+        <div>WS state: {wsState}</div>
+        <div>WS last msg: {wsLastMessageAt ? new Date(wsLastMessageAt).toLocaleTimeString() : '—'}</div>
+        <div>WS events: {wsEventCount}</div>
+        <div>Tile errors: {tileErrors.length}</div>
+        {tileErrors.length > 0 && (
+          <div style={{ marginTop: 6, color: '#fca5a5' }}>
+            {tileErrors[0]}
+          </div>
+        )}
+      </div>
 
       {/* Cesium Globe */}
       <div ref={cesiumContainerRef} style={{ width: '100%', height: '100%' }} />
