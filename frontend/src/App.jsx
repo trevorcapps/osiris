@@ -45,6 +45,7 @@ export default function App() {
   const [wsLastMessageAt, setWsLastMessageAt] = useState(null);
   const [wsEventCount, setWsEventCount] = useState(0);
   const [tileErrors, setTileErrors] = useState([]);
+  const [showNonGeo, setShowNonGeo] = useState(false);
 
   // Initialize Cesium viewer
   useEffect(() => {
@@ -180,6 +181,22 @@ export default function App() {
     setFilteredEvents(filtered);
   }, [events, activeLayers, activeSources]);
 
+  const geoStats = (() => {
+    let geoCount = 0;
+    let nonGeoCount = 0;
+    const nonGeoByType = {};
+    for (const e of filteredEvents) {
+      if (e && e.lat != null && e.lon != null) {
+        geoCount += 1;
+      } else {
+        nonGeoCount += 1;
+        const t = e?.event_type || 'unknown';
+        nonGeoByType[t] = (nonGeoByType[t] || 0) + 1;
+      }
+    }
+    return { geoCount, nonGeoCount, nonGeoByType };
+  })();
+
   const loadEvents = async () => {
     try {
       const data = await fetchEvents({ limit: 5000 });
@@ -300,6 +317,8 @@ export default function App() {
       }}>
         <div style={{ fontWeight: 600, marginBottom: 6, color: '#93c5fd' }}>Status</div>
         <div>Rendered events: {filteredEvents.length}</div>
+        <div>With geo: {geoStats.geoCount}</div>
+        <div>Without geo: {geoStats.nonGeoCount}</div>
         <div>API last fetch: {apiLastFetchAt ? new Date(apiLastFetchAt).toLocaleTimeString() : '—'}</div>
         <div>API events: {apiEventCount}{apiError ? ` (error)` : ''}</div>
         <div>WS state: {wsState}</div>
@@ -311,7 +330,63 @@ export default function App() {
             {tileErrors[0]}
           </div>
         )}
+        {geoStats.nonGeoCount > 0 && (
+          <div style={{ marginTop: 6 }}>
+            <button
+              onClick={() => setShowNonGeo(prev => !prev)}
+              style={{
+                background: 'rgba(96,165,250,0.15)',
+                border: '1px solid rgba(96,165,250,0.3)',
+                color: '#93c5fd',
+                padding: '4px 6px',
+                borderRadius: 6,
+                fontSize: 11,
+                cursor: 'pointer',
+              }}
+            >
+              {showNonGeo ? 'Hide' : 'Show'} non-geo events
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Non-Geo Events Panel */}
+      {showNonGeo && geoStats.nonGeoCount > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: 16,
+          right: 16,
+          zIndex: 999,
+          background: 'rgba(10,14,23,0.9)',
+          border: '1px solid rgba(96,165,250,0.25)',
+          borderRadius: 8,
+          padding: '10px 12px',
+          width: 320,
+          maxHeight: 260,
+          overflow: 'auto',
+          fontSize: 12,
+          color: '#cbd5f5',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 6, color: '#93c5fd' }}>Non-Geo Events</div>
+          <div style={{ marginBottom: 6, color: '#94a3b8' }}>
+            By type: {Object.entries(geoStats.nonGeoByType).map(([k, v]) => `${k} ${v}`).join(' • ')}
+          </div>
+          {filteredEvents.filter(e => e && (e.lat == null || e.lon == null)).slice(0, 20).map((e) => (
+            <div
+              key={e.id}
+              style={{
+                padding: '6px 0',
+                borderTop: '1px solid rgba(96,165,250,0.1)',
+                cursor: 'pointer',
+              }}
+              onClick={() => handleEventClick(e)}
+            >
+              <div style={{ color: '#e2e8f0' }}>{e.title || 'Untitled'}</div>
+              <div style={{ color: '#94a3b8' }}>{e.event_type} • {e.source}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Cesium Globe */}
       <div ref={cesiumContainerRef} style={{ width: '100%', height: '100%' }} />
