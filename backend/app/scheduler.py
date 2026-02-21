@@ -88,7 +88,8 @@ async def run_ingestors():
             )
 
     # Update in-memory store
-    event_store = (all_new_events + event_store)[:MAX_EVENTS]
+    # Update in place so any imported references remain valid.
+    event_store[:] = (all_new_events + event_store)[:MAX_EVENTS]
     logger.info(f"Ingestion complete: {len(all_new_events)} new events, {len(event_store)} total in memory")
 
     # Broadcast to WebSocket subscribers
