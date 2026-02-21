@@ -6,7 +6,7 @@ from app.models.schemas import (
     GeoEvent, GeoEventResponse, EventSource, EventType,
     SearchQuery, RelationshipResult, FeedStatus
 )
-from app.scheduler import event_store, feed_statuses, register_ws, unregister_ws, run_ingestors
+from app.scheduler import get_event_store, get_feed_statuses, register_ws, unregister_ws, run_ingestors
 from app.services.vector_store import vector_store
 from app.services.embeddings import embedding_service
 
@@ -27,7 +27,7 @@ async def get_events(
     since: Optional[str] = None,
 ):
     """Get events with optional filters."""
-    filtered = event_store
+    filtered = get_event_store()
     if source:
         filtered = [e for e in filtered if e.source == source]
     if event_type:
@@ -50,8 +50,8 @@ async def get_events(
     total = len(filtered)
     filtered = filtered[offset:offset + limit]
 
-    sources_active = list(set(s.source.value for s in feed_statuses.values() if s.event_count > 0))
-    sources_unavailable = list(set(s.source.value for s in feed_statuses.values() if not s.configured or s.error))
+    sources_active = list(set(s.source.value for s in get_feed_statuses().values() if s.event_count > 0))
+    sources_unavailable = list(set(s.source.value for s in get_feed_statuses().values() if not s.configured or s.error))
 
     return GeoEventResponse(
         events=filtered,
@@ -86,7 +86,7 @@ async def search_events(query: SearchQuery):
 async def get_relationships(event_id: str, limit: int = 20):
     """Find related events via vector similarity."""
     # Find the event in memory
-    event = next((e for e in event_store if e.id == event_id), None)
+    event = next((e for e in get_event_store() if e.id == event_id), None)
     if not event:
         return {"error": "Event not found", "related": []}
 
@@ -104,12 +104,12 @@ async def get_relationships(event_id: str, limit: int = 20):
 
 
 @router.get("/feeds")
-async def get_feed_statuses():
+async def list_feed_statuses():
     """Get status of all feed ingestors."""
     from app.ingestors.registry import ALL_INGESTORS
     statuses = []
     for ingestor in ALL_INGESTORS:
-        status = feed_statuses.get(ingestor.name, FeedStatus(
+        status = get_feed_statuses().get(ingestor.name, FeedStatus(
             name=ingestor.name,
             source=ingestor.source,
             enabled=True,
@@ -132,7 +132,7 @@ async def search_entities(q: str, limit: int = 50):
     results = []
     seen = set()
     q_lower = q.lower()
-    for event in event_store:
+    for event in get_event_store():
         for entity in event.entities:
             if q_lower in entity.name.lower() and entity.name not in seen:
                 seen.add(entity.name)
@@ -156,15 +156,15 @@ async def get_stats():
     vector_count = await vector_store.get_event_count()
     source_counts = {}
     type_counts = {}
-    for event in event_store:
+    for event in get_event_store():
         source_counts[event.source.value] = source_counts.get(event.source.value, 0) + 1
         type_counts[event.event_type.value] = type_counts.get(event.event_type.value, 0) + 1
 
     return {
-        "total_events": len(event_store),
+        "total_events": len(get_event_store()),
         "vector_db_count": vector_count,
         "by_source": source_counts,
         "by_type": type_counts,
-        "active_feeds": sum(1 for s in feed_statuses.values() if s.event_count > 0),
-        "total_feeds": len(feed_statuses),
+        "active_feeds": sum(1 for s in get_feed_statuses().values() if s.event_count > 0),
+        "total_feeds": len(get_feed_statuses()),
     }

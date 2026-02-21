@@ -10,29 +10,41 @@ from app.models.schemas import GeoEvent, FeedStatus
 logger = logging.getLogger(__name__)
 
 # In-memory event store (recent events for API access)
-event_store: List[GeoEvent] = []
-feed_statuses: Dict[str, FeedStatus] = {}
-_ws_subscribers: List[Any] = []
+# Use a mutable container so all importers share the same reference.
+_state: Dict[str, Any] = {
+    "events": [],
+    "feed_statuses": {},
+    "ws_subscribers": [],
+}
 
 MAX_EVENTS = 10000
 
 
+def get_event_store() -> List[GeoEvent]:
+    return _state["events"]
+
+
+def get_feed_statuses() -> Dict[str, FeedStatus]:
+    return _state["feed_statuses"]
+
+
 def register_ws(ws):
-    _ws_subscribers.append(ws)
+    _state["ws_subscribers"].append(ws)
 
 
 def unregister_ws(ws):
-    if ws in _ws_subscribers:
-        _ws_subscribers.remove(ws)
+    if ws in _state["ws_subscribers"]:
+        _state["ws_subscribers"].remove(ws)
 
 
 async def broadcast_events(events: List[GeoEvent]):
-    if not events or not _ws_subscribers:
+    subs = _state["ws_subscribers"]
+    if not events or not subs:
         return
     import orjson
     payload = orjson.dumps([e.model_dump(mode="json") for e in events[:50]])
     dead = []
-    for ws in _ws_subscribers:
+    for ws in subs:
         try:
             await ws.send_bytes(payload)
         except Exception:
@@ -43,8 +55,8 @@ async def broadcast_events(events: List[GeoEvent]):
 
 async def run_ingestors():
     """Run all ingestors and store results."""
-    global event_store
     logger.info("Starting ingestion cycle...")
+    feed_statuses = _state["feed_statuses"]
     all_new_events = []
 
     for ingestor in ALL_INGESTORS:
@@ -88,9 +100,8 @@ async def run_ingestors():
             )
 
     # Update in-memory store
-    # Update in place so any imported references remain valid.
-    event_store[:] = (all_new_events + event_store)[:MAX_EVENTS]
-    logger.info(f"Ingestion complete: {len(all_new_events)} new events, {len(event_store)} total in memory")
+    _state["events"] = (all_new_events + _state["events"])[:MAX_EVENTS]
+    logger.info(f"Ingestion complete: {len(all_new_events)} new events, {len(_state['events'])} total in memory")
 
     # Broadcast to WebSocket subscribers
     await broadcast_events(all_new_events)
