@@ -46,6 +46,7 @@ export default function App() {
   const [wsEventCount, setWsEventCount] = useState(0);
   const [tileErrors, setTileErrors] = useState([]);
   const [showNonGeo, setShowNonGeo] = useState(false);
+  const [tilesetStatus, setTilesetStatus] = useState('disabled');
 
   // Initialize Cesium viewer
   useEffect(() => {
@@ -109,9 +110,47 @@ export default function App() {
       baseLayer.errorEvent.addEventListener(onTileError);
     }
 
+    let tileset;
+    const googleApiKey = import.meta.env.VITE_GOOGLE_3D_TILES_API_KEY;
+    const ionTilesetId = import.meta.env.VITE_ION_GOOGLE_3D_TILES_ASSET_ID || '2275207';
+    const loadTileset = async () => {
+      try {
+        if (googleApiKey) {
+          tileset = viewer.scene.primitives.add(new Cesium.Cesium3DTileset({
+            url: `https://tile.googleapis.com/v1/3dtiles/root.json?key=${googleApiKey}`,
+            showCreditsOnScreen: true,
+          }));
+          viewer.scene.globe.show = false;
+          setTilesetStatus('google-api');
+          return;
+        }
+        if (ionTilesetId) {
+          const assetId = Number(ionTilesetId);
+          if (!Number.isNaN(assetId)) {
+            tileset = await Cesium.Cesium3DTileset.fromIonAssetId(assetId, {
+              showCreditsOnScreen: true,
+            });
+            viewer.scene.primitives.add(tileset);
+            viewer.scene.globe.show = false;
+            setTilesetStatus('cesium-ion');
+            return;
+          }
+        }
+        setTilesetStatus('disabled');
+      } catch (e) {
+        console.error('Failed to load photorealistic 3D tiles:', e);
+        setTilesetStatus('error');
+      }
+    };
+
+    loadTileset();
+
     return () => {
       if (baseLayer && baseLayer.errorEvent) {
         baseLayer.errorEvent.removeEventListener(onTileError);
+      }
+      if (tileset) {
+        viewer.scene.primitives.remove(tileset);
       }
       handler.destroy();
       viewer.destroy();
@@ -304,7 +343,7 @@ export default function App() {
       <div style={{
         position: 'absolute',
         bottom: 16,
-        left: 16,
+        right: 16,
         zIndex: 999,
         background: 'rgba(10,14,23,0.85)',
         border: '1px solid rgba(96,165,250,0.25)',
@@ -324,30 +363,31 @@ export default function App() {
         <div>WS state: {wsState}</div>
         <div>WS last msg: {wsLastMessageAt ? new Date(wsLastMessageAt).toLocaleTimeString() : '—'}</div>
         <div>WS events: {wsEventCount}</div>
+        <div>3D tiles: {tilesetStatus}</div>
         <div>Tile errors: {tileErrors.length}</div>
         {tileErrors.length > 0 && (
           <div style={{ marginTop: 6, color: '#fca5a5' }}>
             {tileErrors[0]}
           </div>
         )}
-        {geoStats.nonGeoCount > 0 && (
-          <div style={{ marginTop: 6 }}>
-            <button
-              onClick={() => setShowNonGeo(prev => !prev)}
-              style={{
-                background: 'rgba(96,165,250,0.15)',
-                border: '1px solid rgba(96,165,250,0.3)',
-                color: '#93c5fd',
-                padding: '4px 6px',
-                borderRadius: 6,
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              {showNonGeo ? 'Hide' : 'Show'} non-geo events
-            </button>
-          </div>
-        )}
+        <div style={{ marginTop: 6 }}>
+          <button
+            onClick={() => setShowNonGeo(prev => !prev)}
+            disabled={geoStats.nonGeoCount === 0}
+            style={{
+              background: 'rgba(96,165,250,0.15)',
+              border: '1px solid rgba(96,165,250,0.3)',
+              color: geoStats.nonGeoCount === 0 ? '#64748b' : '#93c5fd',
+              padding: '4px 6px',
+              borderRadius: 6,
+              fontSize: 11,
+              cursor: geoStats.nonGeoCount === 0 ? 'not-allowed' : 'pointer',
+              opacity: geoStats.nonGeoCount === 0 ? 0.6 : 1,
+            }}
+          >
+            {showNonGeo ? 'Hide' : 'Show'} non-geo events ({geoStats.nonGeoCount})
+          </button>
+        </div>
       </div>
 
       {/* Non-Geo Events Panel */}
@@ -355,7 +395,7 @@ export default function App() {
         <div style={{
           position: 'absolute',
           bottom: 16,
-          right: 16,
+          left: 16,
           zIndex: 999,
           background: 'rgba(10,14,23,0.9)',
           border: '1px solid rgba(96,165,250,0.25)',
