@@ -38,7 +38,7 @@ services:
       - qdrant_storage:/qdrant/storage
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "/bin/sh -c 'exec 3<>/dev/tcp/localhost/6333 && echo -e \"GET / HTTP/1.0\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q HTTP'"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 10s
       timeout: 5s
       retries: 10
