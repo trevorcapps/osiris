@@ -40,7 +40,7 @@ services:
       - qdrant_storage:/qdrant/storage
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
