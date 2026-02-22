@@ -16,41 +16,33 @@ class UNHCRIngestor(BaseIngestor):
     async def fetch(self) -> List[GeoEvent]:
         events = []
         async with httpx.AsyncClient(timeout=30) as client:
-            # UNHCR population statistics API
+            # UNHCR Population API v1
             resp = await client.get(
-                "https://data.unhcr.org/api/population/get/timeseries",
-                params={"limit": 50, "year": datetime.utcnow().year}
+                "https://api.unhcr.org/population/v1/countries/",
+                params={"limit": 50}
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data.get("data", [])[:50]:
-                    country = item.get("country_name", "Unknown")
-                    refugees = item.get("refugees", 0)
-                    events.append(GeoEvent(
-                        source=EventSource.UNHCR,
-                        event_type=EventType.HUMANITARIAN,
-                        title=f"Refugee population: {country}",
-                        description=f"Refugees: {refugees:,}",
-                        lat=None, lon=None,
-                        timestamp=datetime.utcnow(),
-                        severity="high" if refugees and refugees > 100000 else "medium",
-                        metadata={"country": country, "refugees": refugees}
-                    ))
+            if resp.status_code != 200:
+                return events
+            data = resp.json()
+            for item in data.get("items", [])[:50]:
+                country = item.get("name", "Unknown")
+                code = item.get("iso2", "")
+                region = item.get("region", "")
 
-            # Also try situations API
-            resp2 = await client.get("https://data.unhcr.org/api/situations")
-            if resp2.status_code == 200:
-                situations = resp2.json()
-                for sit in (situations.get("data", []) if isinstance(situations, dict) else [])[:20]:
-                    name = sit.get("name", "")
-                    events.append(GeoEvent(
-                        source=EventSource.UNHCR,
-                        event_type=EventType.HUMANITARIAN,
-                        title=f"UNHCR Situation: {name}",
-                        description=str(sit.get("description", ""))[:500],
-                        lat=None, lon=None,
-                        timestamp=datetime.utcnow(),
-                        severity="high",
-                        metadata={"situation": name}
-                    ))
+                events.append(GeoEvent(
+                    source=EventSource.UNHCR,
+                    event_type=EventType.HUMANITARIAN,
+                    title=f"UNHCR Country Profile: {country}",
+                    description=f"Region: {region}",
+                    lat=None, lon=None,
+                    timestamp=datetime.utcnow(),
+                    severity="medium",
+                    url=f"https://data.unhcr.org/en/country/{code.lower()}" if code else None,
+                    metadata={
+                        "country": country,
+                        "iso": code,
+                        "region": region,
+                        "major_area": item.get("majorArea"),
+                    }
+                ))
         return events

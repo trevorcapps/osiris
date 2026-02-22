@@ -17,25 +17,24 @@ class WHOIngestor(BaseIngestor):
     async def fetch(self) -> List[GeoEvent]:
         events = []
         async with httpx.AsyncClient(timeout=30) as client:
+            # WHO Disease Outbreak News API (OData)
             resp = await client.get(
-                "https://www.who.int/feeds/entity/don/en/rss.xml"
+                "https://www.who.int/api/hubs/diseaseoutbreaknews",
+                params={"$top": 30, "$orderby": "PublicationDate desc"}
             )
             if resp.status_code != 200:
                 return events
-
-            import feedparser
-            feed = feedparser.parse(resp.text)
-            for entry in feed.entries[:30]:
-                title = entry.get("title", "")
-                desc = entry.get("summary", "")
-                link = entry.get("link", "")
+            data = resp.json()
+            for item in data.get("value", []):
+                title = item.get("Title", "") or item.get("Name", "")
+                summary = item.get("Summary", "") or item.get("Description", "")
+                pub_date = item.get("PublicationDate", "")
+                url = item.get("CanonicalUrl", "") or item.get("ItemUrl", "")
+                country = item.get("CountryName", "")
 
                 try:
-                    if entry.get("published_parsed"):
-                        ts = datetime(*entry.published_parsed[:6])
-                    else:
-                        ts = datetime.utcnow()
-                except Exception:
+                    ts = datetime.fromisoformat(pub_date.replace("Z", "+00:00"))
+                except (ValueError, TypeError, AttributeError):
                     ts = datetime.utcnow()
 
                 entities_found = extract_entities(title)
@@ -43,14 +42,17 @@ class WHOIngestor(BaseIngestor):
                 events.append(GeoEvent(
                     source=EventSource.WHO,
                     event_type=EventType.HEALTH,
-                    title=title,
-                    description=desc[:500],
+                    title=title[:300],
+                    description=summary[:500],
                     lat=None,
                     lon=None,
                     timestamp=ts,
                     entities=entities_found,
-                    url=link,
+                    url=url,
                     severity="high",
-                    metadata={"source": "WHO DON"}
+                    metadata={
+                        "source": "WHO DON",
+                        "country": country,
+                    }
                 ))
         return events
