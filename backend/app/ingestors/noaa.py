@@ -27,15 +27,17 @@ class NOAAIngestor(BaseIngestor):
                 props = feature.get("properties", {})
                 geo = feature.get("geometry")
                 lat, lon = None, None
-                if geo and geo.get("coordinates"):
+                if geo and geo.get("type") and geo.get("coordinates"):
                     coords = geo["coordinates"]
-                    if geo["type"] == "Point":
-                        lon, lat = coords
-                    elif geo["type"] == "Polygon" and coords:
-                        # Centroid approximation
-                        ring = coords[0]
-                        lat = sum(c[1] for c in ring) / len(ring)
-                        lon = sum(c[0] for c in ring) / len(ring)
+                    try:
+                        if geo["type"] == "Point":
+                            lon, lat = coords[0], coords[1]
+                        elif geo["type"] == "Polygon" and coords and coords[0]:
+                            ring = coords[0]
+                            lat = sum(c[1] for c in ring) / len(ring)
+                            lon = sum(c[0] for c in ring) / len(ring)
+                    except (IndexError, TypeError):
+                        lat, lon = None, None
 
                 severity_map = {"Extreme": "critical", "Severe": "high", "Moderate": "medium", "Minor": "low"}
                 severity = severity_map.get(props.get("severity"), "medium")
