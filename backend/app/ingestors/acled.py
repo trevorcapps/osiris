@@ -1,6 +1,5 @@
 import httpx
 import logging
-import time
 from datetime import datetime, timedelta
 from typing import List, Optional
 from app.ingestors.base import BaseIngestor
@@ -8,15 +7,13 @@ from app.models.schemas import GeoEvent, EventSource, EventType
 from app.services.entity_extractor import extract_entities
 from app.config import settings
 
-TOKEN_URL = "https://acleddata.com/oauth/token"
+LOGIN_URL = "https://acleddata.com/user/login?_format=json"
 API_URL = "https://acleddata.com/api/acled/read"
-TOKEN_SKEW_SECONDS = 60
-_token_cache = {
-    "access_token": None,
-    "refresh_token": None,
-    "expires_at": 0.0,
-}
+
 logger = logging.getLogger(__name__)
+
+# Cache session cookies across fetch cycles
+_session_cookies: Optional[httpx.Cookies] = None
 
 
 class ACLEDIngestor(BaseIngestor):
@@ -25,58 +22,44 @@ class ACLEDIngestor(BaseIngestor):
     requires_key = True
 
     def is_configured(self) -> bool:
-        return bool(settings.acled_refresh_token or (settings.acled_username and settings.acled_password))
+        return bool(settings.acled_username and settings.acled_password)
 
-    async def _fetch_token(self, client: httpx.AsyncClient) -> Optional[str]:
-        now = time.time()
-        if _token_cache["access_token"] and (_token_cache["expires_at"] - TOKEN_SKEW_SECONDS) > now:
-            return _token_cache["access_token"]
-
-        # Prefer refresh token if available
-        if _token_cache["refresh_token"] or settings.acled_refresh_token:
-            refresh_token = _token_cache["refresh_token"] or settings.acled_refresh_token
+    async def _login(self, client: httpx.AsyncClient) -> bool:
+        global _session_cookies
+        try:
             resp = await client.post(
-                TOKEN_URL,
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "client_id": "acled",
+                LOGIN_URL,
+                json={
+                    "name": settings.acled_username,
+                    "pass": settings.acled_password,
                 },
+                headers={"Content-Type": "application/json"},
             )
-        else:
-            resp = await client.post(
-                TOKEN_URL,
-                data={
-                    "grant_type": "password",
-                    "username": settings.acled_username,
-                    "password": settings.acled_password,
-                    "client_id": "acled",
-                },
-            )
-
-        if resp.status_code != 200:
-            logger.error(f"ACLED token request failed: {resp.status_code} {resp.text[:500]}")
-            return None
-
-        data = resp.json()
-        access_token = data.get("access_token")
-        if not access_token:
-            logger.error("ACLED token response missing access_token")
-            return None
-
-        _token_cache["access_token"] = access_token
-        _token_cache["refresh_token"] = data.get("refresh_token", _token_cache["refresh_token"])
-        expires_in = int(data.get("expires_in", 0) or 0)
-        _token_cache["expires_at"] = now + expires_in
-        return access_token
+            if resp.status_code == 200:
+                _session_cookies = resp.cookies
+                logger.info("ACLED login successful")
+                return True
+            else:
+                logger.error(f"ACLED login failed: {resp.status_code} {resp.text[:300]}")
+                return False
+        except Exception as e:
+            logger.error(f"ACLED login error: {e}")
+            return False
 
     async def fetch(self) -> List[GeoEvent]:
+        global _session_cookies
         events = []
         week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-        async with httpx.AsyncClient(timeout=30) as client:
-            token = await self._fetch_token(client)
-            if not token:
-                return events
+
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            # Login if no cached session
+            if not _session_cookies:
+                if not await self._login(client):
+                    return events
+
+            # Set cookies on client
+            client.cookies = _session_cookies
+
             resp = await client.get(
                 API_URL,
                 params={
@@ -84,15 +67,29 @@ class ACLEDIngestor(BaseIngestor):
                     "event_date_where": ">=",
                     "limit": 100,
                 },
-                headers={"Authorization": f"Bearer {token}"},
             )
+
+            # If 403, try re-login once
+            if resp.status_code == 403:
+                logger.info("ACLED session expired, re-authenticating...")
+                _session_cookies = None
+                if not await self._login(client):
+                    return events
+                client.cookies = _session_cookies
+                resp = await client.get(
+                    API_URL,
+                    params={
+                        "event_date": f"{week_ago}|",
+                        "event_date_where": ">=",
+                        "limit": 100,
+                    },
+                )
+
             if resp.status_code != 200:
-                logger.error(f"ACLED API request failed: {resp.status_code} {resp.text[:500]}")
+                logger.error(f"ACLED API request failed: {resp.status_code} {resp.text[:300]}")
                 return events
+
             data = resp.json()
-            if data.get("status") not in (200, "200", None):
-                logger.error(f"ACLED API returned non-200 status field: {data.get('status')} {str(data)[:500]}")
-                return events
             for item in data.get("data", []):
                 lat = float(item.get("latitude", 0)) if item.get("latitude") else None
                 lon = float(item.get("longitude", 0)) if item.get("longitude") else None

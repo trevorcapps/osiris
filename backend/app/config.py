@@ -22,9 +22,8 @@ class Settings(BaseSettings):
     shodan_api_key: Optional[str] = None
     greynoise_api_key: Optional[str] = None
     otx_api_key: Optional[str] = None
-    acled_username: Optional[str] = None
-    acled_password: Optional[str] = None
-    acled_refresh_token: Optional[str] = None
+    acled_username: Optional[str] = None  # myACLED email
+    acled_password: Optional[str] = None  # myACLED password
     nasa_firms_api_key: Optional[str] = None
 
     # Backend
