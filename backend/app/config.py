@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     acled_password: Optional[str] = None  # myACLED password
     nasa_firms_api_key: Optional[str] = None
 
+    # X OSINT feed scraping (via Nitter RSS)
+    x_osint_handles: Optional[str] = None
+    nitter_instances: Optional[str] = None
+
     # Backend
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000

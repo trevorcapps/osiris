@@ -31,6 +31,7 @@ class EventSource(str, Enum):
     SEC_EDGAR = "sec_edgar"
     WORLD_BANK = "world_bank"
     RSS_NEWS = "rss_news"
+    X_OSINT = "x_osint"
     REDDIT = "reddit"
     SUBMARINE_CABLES = "submarine_cables"
     IODA = "ioda"

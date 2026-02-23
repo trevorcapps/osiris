@@ -8,7 +8,7 @@ A Google Earth-style 3D globe interface with real-time OSINT data feeds and AI-p
 ## Features
 
 - **3D Globe** — CesiumJS-powered interactive globe with real-time data overlays
-- **21 OSINT Feed Ingestors** — covering conflict, aviation, maritime, cyber, financial, humanitarian, and more
+- **22 OSINT Feed Ingestors** — covering conflict, aviation, maritime, cyber, financial, humanitarian, and more
 - **Vector DB Relationships** — Qdrant-powered semantic similarity finds non-obvious connections across data sources
 - **Entity Extraction** — spaCy NER identifies people, organizations, and locations across all events
 - **Real-time Updates** — WebSocket push for live data as feeds refresh
@@ -24,7 +24,7 @@ A Google Earth-style 3D globe interface with real-time OSINT data feeds and AI-p
 | 🌍 Natural | USGS Earthquakes, NASA EONET, NOAA Weather, NASA FIRMS Wildfires, Smithsonian Volcanoes |
 | 💻 Cyber | CISA KEV, Shodan, GreyNoise, AlienVault OTX |
 | 🚫 Sanctions | OFAC SDN, OpenSanctions |
-| 📰 News | RSS (Reuters, BBC, AP, Al Jazeera), Reddit |
+| 📰 News | RSS (Reuters, BBC, AP, Al Jazeera), X OSINT (configurable handles), Reddit |
 | 🏥 Health | WHO Disease Outbreaks |
 | 🤝 Humanitarian | UNHCR, ReliefWeb |
 | 🏗️ Infrastructure | Submarine Cables (TeleGeography), IODA Internet Outages |
@@ -39,6 +39,8 @@ cd osiris
 # Configure
 cp .env.example .env
 # Edit .env with your API keys (most feeds work without keys)
+# Optional: customize X OSINT accounts
+# X_OSINT_HANDLES=sentdefender,AuroraIntel,IntelCrab,ELINTNews,WarMonitors
 
 # Launch
 docker compose up -d

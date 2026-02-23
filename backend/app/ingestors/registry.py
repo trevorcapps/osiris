@@ -13,6 +13,7 @@ from app.ingestors.greynoise import GreyNoiseIngestor
 from app.ingestors.otx import OTXIngestor
 from app.ingestors.shodan_feed import ShodanIngestor
 from app.ingestors.rss_news import RSSNewsIngestor
+from app.ingestors.x_osint import XOSINTIngestor
 from app.ingestors.reddit import RedditIngestor
 from app.ingestors.who import WHOIngestor
 from app.ingestors.submarine_cables import SubmarineCableIngestor
@@ -36,6 +37,7 @@ ALL_INGESTORS = [
     OTXIngestor(),
     ShodanIngestor(),
     RSSNewsIngestor(),
+    XOSINTIngestor(),
     RedditIngestor(),
     WHOIngestor(),
     SubmarineCableIngestor(),
