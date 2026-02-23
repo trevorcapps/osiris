@@ -175,7 +175,7 @@ export default function App() {
     viewer.entities.removeAll();
 
     filteredEvents.forEach(event => {
-      if (!event.lat || !event.lon) return;
+      if (event.lat == null || event.lon == null) return;
       const colorHex = TYPE_COLORS_CSS[event.event_type] || '#ffffff';
       const rgb = cssToRgb(colorHex);
       const size = SEVERITY_SCALE[event.severity] || 8;
@@ -212,6 +212,14 @@ export default function App() {
         }
         return merged;
       });
+      const sources = new Set((newEvents || []).map(e => e?.source).filter(Boolean));
+      if (sources.size > 0) {
+        setActiveSources(prev => {
+          const next = new Set(prev);
+          for (const s of sources) next.add(s);
+          return next;
+        });
+      }
       setWsLastMessageAt(Date.now());
       setWsEventCount(prev => prev + (newEvents?.length || 0));
     });
@@ -310,9 +318,12 @@ export default function App() {
 
   const toggleLayer = (type) => {
     setActiveLayers(prev => {
-      const next = new Set(prev);
-      next.has(type) ? next.delete(type) : next.add(type);
-      return next;
+      // Click behavior: focus this category only.
+      // If already focused on this single category, reset to all categories.
+      if (prev.size === 1 && prev.has(type)) {
+        return new Set(Object.keys(TYPE_COLORS_CSS));
+      }
+      return new Set([type]);
     });
   };
 
@@ -342,7 +353,9 @@ export default function App() {
         activeLayers={activeLayers}
         onToggle={toggleLayer}
         eventCounts={filteredEvents.reduce((acc, e) => {
-          acc[e.event_type] = (acc[e.event_type] || 0) + 1;
+          if (e && e.lat != null && e.lon != null) {
+            acc[e.event_type] = (acc[e.event_type] || 0) + 1;
+          }
           return acc;
         }, {})}
       />
@@ -409,8 +422,8 @@ export default function App() {
           border: '1px solid rgba(96,165,250,0.25)',
           borderRadius: 8,
           padding: '10px 12px',
-          width: 320,
-          maxHeight: 260,
+          width: 460,
+          maxHeight: 420,
           overflow: 'auto',
           fontSize: 12,
           color: '#cbd5f5',
@@ -419,7 +432,7 @@ export default function App() {
           <div style={{ marginBottom: 6, color: '#94a3b8' }}>
             By type: {Object.entries(geoStats.nonGeoByType).map(([k, v]) => `${k} ${v}`).join(' • ')}
           </div>
-          {filteredEvents.filter(e => e && (e.lat == null || e.lon == null)).slice(0, 20).map((e) => (
+          {filteredEvents.filter(e => e && (e.lat == null || e.lon == null)).slice(0, 60).map((e) => (
             <div
               key={e.id}
               style={{

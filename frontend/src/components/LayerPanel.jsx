@@ -48,7 +48,7 @@ export default function LayerPanel({ activeLayers, onToggle, eventCounts }) {
       position: 'absolute', top: 70, left: 12, zIndex: 1000,
       background: 'rgba(15,23,42,0.9)', borderRadius: 12,
       border: '1px solid rgba(96,165,250,0.2)',
-      backdropFilter: 'blur(10px)', width: collapsed ? 44 : 220,
+      backdropFilter: 'blur(10px)', width: collapsed ? 44 : 280,
       transition: 'width 0.2s', overflow: 'hidden',
     }}>
       <div
