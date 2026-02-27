@@ -78,7 +78,7 @@ export default function App() {
   const [wsEventCount, setWsEventCount] = useState(0);
   const [tileErrors, setTileErrors] = useState([]);
   const [showNonGeo, setShowNonGeo] = useState(false);
-  const [tilesetStatus] = useState('earth-at-night (ion:3812)');
+  const [tilesetStatus, setTilesetStatus] = useState('earth-at-night (loading)');
 
   const timelineBounds = useMemo(() => {
     const timestamps = events.map(eventTs).filter(Boolean);
@@ -137,24 +137,45 @@ export default function App() {
       selectionIndicator: false,
       infoBox: false,
       scene3DOnly: true,
-      imageryProvider: (() => {
-        if (ionToken && Cesium.IonImageryProvider?.fromAssetId) {
-          return Cesium.IonImageryProvider.fromAssetId(3812);
-        }
-        return new Cesium.ArcGisMapServerImageryProvider({
-          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer',
-        });
-      })(),
+      imageryProvider: new Cesium.ArcGisMapServerImageryProvider({
+        url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer',
+      }),
     });
 
-    const baseLayer = viewer.imageryLayers.get(0);
-    if (baseLayer) {
-      baseLayer.brightness = 0.45;
-      baseLayer.contrast = 1.15;
-      baseLayer.saturation = 0.1;
-      baseLayer.hue = 0.58;
-      baseLayer.gamma = 0.9;
-    }
+    let baseLayer = viewer.imageryLayers.get(0);
+    const applyLayerStyle = (layer) => {
+      if (!layer) return;
+      layer.brightness = 0.45;
+      layer.contrast = 1.15;
+      layer.saturation = 0.1;
+      layer.hue = 0.58;
+      layer.gamma = 0.9;
+    };
+    applyLayerStyle(baseLayer);
+
+    const onTileError = (error) => {
+      const message = error?.message || 'Tile load error';
+      const label = `${new Date().toLocaleTimeString()} ${message}`;
+      setTileErrors(prev => [label, ...prev].slice(0, 5));
+    };
+
+    const loadEarthAtNight = async () => {
+      if (!ionToken || !Cesium.IonImageryProvider?.fromAssetId) {
+        setTilesetStatus('fallback-dark-gray');
+        return;
+      }
+      try {
+        const provider = await Cesium.IonImageryProvider.fromAssetId(3812);
+        viewer.imageryLayers.removeAll();
+        baseLayer = viewer.imageryLayers.addImageryProvider(provider);
+        applyLayerStyle(baseLayer);
+        if (baseLayer?.errorEvent) baseLayer.errorEvent.addEventListener(onTileError);
+        setTilesetStatus('earth-at-night (ion:3812)');
+      } catch (e) {
+        console.error('Failed to load Earth at Night imagery:', e);
+        setTilesetStatus('imagery-error-fallback');
+      }
+    };
 
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#030712');
     if (viewer.scene.globe) {
@@ -177,13 +198,8 @@ export default function App() {
 
     viewerRef.current = viewer;
 
-    const onTileError = (error) => {
-      const message = error?.message || 'Tile load error';
-      const label = `${new Date().toLocaleTimeString()} ${message}`;
-      setTileErrors(prev => [label, ...prev].slice(0, 5));
-    };
     if (baseLayer?.errorEvent) baseLayer.errorEvent.addEventListener(onTileError);
-
+    loadEarthAtNight();
 
     return () => {
       if (baseLayer?.errorEvent) baseLayer.errorEvent.removeEventListener(onTileError);
