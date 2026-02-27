@@ -78,7 +78,7 @@ export default function App() {
   const [wsEventCount, setWsEventCount] = useState(0);
   const [tileErrors, setTileErrors] = useState([]);
   const [showNonGeo, setShowNonGeo] = useState(false);
-  const [tilesetStatus, setTilesetStatus] = useState('disabled');
+  const [tilesetStatus] = useState('earth-at-night (ion:3812)');
 
   const timelineBounds = useMemo(() => {
     const timestamps = events.map(eventTs).filter(Boolean);
@@ -138,18 +138,11 @@ export default function App() {
       infoBox: false,
       scene3DOnly: true,
       imageryProvider: (() => {
-        if (ionToken) {
-          if (typeof Cesium.createWorldImagery === 'function') {
-            return Cesium.createWorldImagery({
-              style: Cesium.IonWorldImageryStyle?.AERIAL_WITH_LABELS,
-            });
-          }
-          if (Cesium.IonImageryProvider?.fromAssetId) {
-            return Cesium.IonImageryProvider.fromAssetId(2);
-          }
+        if (ionToken && Cesium.IonImageryProvider?.fromAssetId) {
+          return Cesium.IonImageryProvider.fromAssetId(3812);
         }
         return new Cesium.ArcGisMapServerImageryProvider({
-          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer',
+          url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer',
         });
       })(),
     });
@@ -191,44 +184,9 @@ export default function App() {
     };
     if (baseLayer?.errorEvent) baseLayer.errorEvent.addEventListener(onTileError);
 
-    let tileset;
-    const googleApiKey = import.meta.env.VITE_GOOGLE_3D_TILES_API_KEY;
-    const ionTilesetId = import.meta.env.VITE_ION_GOOGLE_3D_TILES_ASSET_ID || '2275207';
-    const loadTileset = async () => {
-      try {
-        if (googleApiKey) {
-          tileset = viewer.scene.primitives.add(new Cesium.Cesium3DTileset({
-            url: `https://tile.googleapis.com/v1/3dtiles/root.json?key=${googleApiKey}`,
-            showCreditsOnScreen: true,
-          }));
-          viewer.scene.globe.show = false;
-          setTilesetStatus('google-api');
-          return;
-        }
-        if (ionTilesetId) {
-          const assetId = Number(ionTilesetId);
-          if (!Number.isNaN(assetId)) {
-            tileset = await Cesium.Cesium3DTileset.fromIonAssetId(assetId, {
-              showCreditsOnScreen: true,
-            });
-            viewer.scene.primitives.add(tileset);
-            viewer.scene.globe.show = false;
-            setTilesetStatus('cesium-ion');
-            return;
-          }
-        }
-        setTilesetStatus('disabled');
-      } catch (e) {
-        console.error('Failed to load photorealistic 3D tiles:', e);
-        setTilesetStatus('error');
-      }
-    };
-
-    loadTileset();
 
     return () => {
       if (baseLayer?.errorEvent) baseLayer.errorEvent.removeEventListener(onTileError);
-      if (tileset) viewer.scene.primitives.remove(tileset);
       handler.destroy();
       viewer.destroy();
       viewerRef.current = null;
